@@ -29,85 +29,84 @@ def get_user_tasks(user_id):
         if not conn:
             return jsonify({'error': 'Database connection failed'}), 500
             
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        with conn.cursor() as cur:
             cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
             user = cur.fetchone()
             if not user:
                 return jsonify({'error': 'User not found'}), 404
-        
-        # Get query parameters
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        status_filter = request.args.get('status')
-        priority_filter = request.args.get('priority')
-        category_filter = request.args.get('category')
-        search_term = request.args.get('search')
-        meeting_id = request.args.get('meeting_id')
-        
-        # Build base query
-        base_query = "SELECT * FROM tasks WHERE user_id = %s"
-        params = [user_id]
-        
-        # Apply filters
-        if status_filter:
-            base_query += " AND status = %s"
-            params.append(status_filter)
-        
-        if priority_filter:
-            base_query += " AND priority = %s"
-            params.append(priority_filter)
-        
-        if category_filter:
-            base_query += " AND category = %s"
-            params.append(category_filter)
-        
-        if meeting_id:
-            base_query += " AND meeting_id = %s"
-            params.append(meeting_id)
-        
-        if search_term:
-            base_query += " AND (name ILIKE %s OR description ILIKE %s OR owner ILIKE %s)"
-            search_param = f'%{search_term}%'
-            params.extend([search_param, search_param, search_param])
-        
-        # Count total tasks
-        count_query = f"SELECT COUNT(*) as total FROM ({base_query}) as filtered_tasks"
-        cur.execute(count_query, params)
-        total_tasks = cur.fetchone()['total']
-        
-        # Add ordering and pagination
-        base_query += " ORDER BY priority DESC, deadline ASC, created_at DESC"
-        base_query += " LIMIT %s OFFSET %s"
-        params.extend([per_page, (page - 1) * per_page])
-        
-        # Execute query
-        cur.execute(base_query, params)
-        tasks = cur.fetchall()
-        
-        # Calculate statistics
-        stats_query = """
-            SELECT 
-                COUNT(*) as total,
-                COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
-                COUNT(CASE WHEN status = 'in_progress' THEN 1 END) as in_progress,
-                COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
-                COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled,
-                COUNT(CASE WHEN priority = 'high' THEN 1 END) as high_priority,
-                COUNT(CASE WHEN deadline < NOW() AND status != 'completed' THEN 1 END) as overdue
-            FROM tasks WHERE user_id = %s
-        """
-        cur.execute(stats_query, (user_id,))
-        stats = cur.fetchone()
-        
-        # Convert tasks to dict format
-        tasks_list = []
-        for task in tasks:
-            task_dict = dict(task)
-            # Convert datetime objects to strings
-            for key, value in task_dict.items():
-                if isinstance(value, datetime):
-                    task_dict[key] = value.isoformat()
-            tasks_list.append(task_dict)
+            
+            # Get query parameters
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 20, type=int)
+            status_filter = request.args.get('status')
+            priority_filter = request.args.get('priority')
+            category_filter = request.args.get('category')
+            search_term = request.args.get('search')
+            meeting_id = request.args.get('meeting_id')
+            
+            # Build base query
+            base_query = "SELECT id, name, description, status, priority, category, deadline, created_at FROM tasks WHERE user_id = %s"
+            params = [user_id]
+            
+            # Apply filters
+            if status_filter:
+                base_query += " AND status = %s"
+                params.append(status_filter)
+            
+            if priority_filter:
+                base_query += " AND priority = %s"
+                params.append(priority_filter)
+            
+            if category_filter:
+                base_query += " AND category = %s"
+                params.append(category_filter)
+            
+            if meeting_id:
+                base_query += " AND meeting_id = %s"
+                params.append(meeting_id)
+            
+            if search_term:
+                base_query += " AND (name ILIKE %s OR description ILIKE %s)"
+                search_param = f'%{search_term}%'
+                params.extend([search_param, search_param])
+            
+            # Count total tasks
+            count_query = f"SELECT COUNT(*) FROM ({base_query}) as filtered_tasks"
+            cur.execute(count_query, params)
+            total_tasks = cur.fetchone()[0]
+            
+            # Add ordering and pagination
+            base_query += " ORDER BY created_at DESC"
+            base_query += " LIMIT %s OFFSET %s"
+            params.extend([per_page, (page - 1) * per_page])
+            
+            # Execute query
+            cur.execute(base_query, params)
+            tasks = cur.fetchall()
+            
+            # Calculate statistics
+            stats_query = """
+                SELECT 
+                    COUNT(*) as total,
+                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed
+                FROM tasks WHERE user_id = %s
+            """
+            cur.execute(stats_query, (user_id,))
+            stats = cur.fetchone()
+            
+            # Convert tasks to dict format
+            tasks_list = []
+            column_names = ['id', 'name', 'description', 'status', 'priority', 'category', 'deadline', 'created_at']
+            for task in tasks:
+                task_dict = {}
+                for i, value in enumerate(task):
+                    key = column_names[i]
+                    if isinstance(value, datetime):
+                        task_dict[key] = value.isoformat()
+                    else:
+                        task_dict[key] = value
+                tasks_list.append(task_dict)
         
         return jsonify({
             'tasks': tasks_list,
@@ -117,7 +116,11 @@ def get_user_tasks(user_id):
                 'total': total_tasks,
                 'pages': (total_tasks + per_page - 1) // per_page
             },
-            'statistics': dict(stats)
+            'stats': {
+                'total': stats[0],
+                'pending': stats[1],
+                'completed': stats[2]
+            }
         })
         
     except Exception as e:
@@ -340,6 +343,82 @@ def get_task_stats(user_id):
     except Exception as e:
         logging.error(f"Error fetching task stats: {e}")
         return jsonify({'error': 'Failed to fetch task statistics'}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@task_bp.route('/tasks/overdue/user/<user_id>', methods=['GET'])
+def get_overdue_tasks(user_id):
+    """Get overdue tasks for a user"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if user exists
+            cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+            user = cur.fetchone()
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+            
+            # Get overdue tasks
+            cur.execute("""
+                SELECT * FROM tasks 
+                WHERE user_id = %s 
+                AND deadline < NOW() 
+                AND status != 'completed'
+                ORDER BY deadline ASC
+            """, (user_id,))
+            
+            tasks = cur.fetchall()
+            
+            return jsonify({
+                'tasks': [dict(task) for task in tasks],
+                'count': len(tasks)
+            })
+            
+    except Exception as e:
+        logging.error(f"Error fetching overdue tasks: {e}")
+        return jsonify({'error': 'Failed to fetch overdue tasks'}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@task_bp.route('/tasks/upcoming/user/<user_id>', methods=['GET'])
+def get_upcoming_tasks(user_id):
+    """Get upcoming tasks for a user"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if user exists
+            cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+            user = cur.fetchone()
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+            
+            # Get upcoming tasks (due within next 7 days)
+            cur.execute("""
+                SELECT * FROM tasks 
+                WHERE user_id = %s 
+                AND deadline BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+                AND status != 'completed'
+                ORDER BY deadline ASC
+            """, (user_id,))
+            
+            tasks = cur.fetchall()
+            
+            return jsonify({
+                'tasks': [dict(task) for task in tasks],
+                'count': len(tasks)
+            })
+            
+    except Exception as e:
+        logging.error(f"Error fetching upcoming tasks: {e}")
+        return jsonify({'error': 'Failed to fetch upcoming tasks'}), 500
     finally:
         if 'conn' in locals():
             conn.close()

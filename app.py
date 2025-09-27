@@ -18,7 +18,13 @@ load_dotenv()
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app)
+
+# Configure CORS to allow requests from frontend
+CORS(app, 
+     origins="*", 
+     supports_credentials=True,
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 # Configuration
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')

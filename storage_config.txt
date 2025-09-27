@@ -1,0 +1,5 @@
+# Meeting AI Configuration
+STORAGE_TYPE=local
+MAX_FILE_SIZE=500MB
+ALLOWED_FORMATS=wav,mp3,mp4,m4a
+UPLOAD_DIR=uploads

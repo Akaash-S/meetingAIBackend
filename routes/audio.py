@@ -328,8 +328,8 @@ def start_websocket_server():
         import websockets
         
         async def server():
-            async with websockets.serve(handle_websocket_connection, "localhost", 5000):
-                logging.info("WebSocket server started on ws://localhost:5000/audio")
+            async with websockets.serve(handle_websocket_connection, "localhost", 5001):
+                logging.info("WebSocket server started on ws://localhost:5001/audio")
                 await asyncio.Future()  # Run forever
         
         # Run WebSocket server in a separate thread
