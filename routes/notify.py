@@ -9,7 +9,21 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 import json
 
-from models import db, Task, User, Meeting
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def get_db_connection():
+    """Get database connection"""
+    try:
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        logging.error(f"Database connection error: {e}")
+        return None
 
 notify_bp = Blueprint('notify', __name__)
 

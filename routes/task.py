@@ -25,9 +25,15 @@ def get_user_tasks(user_id):
     """Get all tasks for a user with filtering and pagination"""
     try:
         # Check if user exists
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+            user = cur.fetchone()
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
         
         # Get query parameters
         page = request.args.get('page', 1, type=int)
@@ -38,74 +44,118 @@ def get_user_tasks(user_id):
         search_term = request.args.get('search')
         meeting_id = request.args.get('meeting_id')
         
-        # Build query
-        query = Task.query.filter_by(user_id=user_id)
+        # Build base query
+        base_query = "SELECT * FROM tasks WHERE user_id = %s"
+        params = [user_id]
         
         # Apply filters
         if status_filter:
-            query = query.filter_by(status=TaskStatus(status_filter))
+            base_query += " AND status = %s"
+            params.append(status_filter)
         
         if priority_filter:
-            query = query.filter_by(priority=TaskPriority(priority_filter))
+            base_query += " AND priority = %s"
+            params.append(priority_filter)
         
         if category_filter:
-            query = query.filter_by(category=TaskCategory(category_filter))
+            base_query += " AND category = %s"
+            params.append(category_filter)
         
         if meeting_id:
-            query = query.filter_by(meeting_id=meeting_id)
+            base_query += " AND meeting_id = %s"
+            params.append(meeting_id)
         
         if search_term:
-            query = query.filter(
-                or_(
-                    Task.name.ilike(f'%{search_term}%'),
-                    Task.description.ilike(f'%{search_term}%'),
-                    Task.owner.ilike(f'%{search_term}%')
-                )
-            )
+            base_query += " AND (name ILIKE %s OR description ILIKE %s OR owner ILIKE %s)"
+            search_param = f'%{search_term}%'
+            params.extend([search_param, search_param, search_param])
         
-        # Order by priority and deadline
-        query = query.order_by(
-            Task.priority.desc(),
-            Task.deadline.asc(),
-            Task.created_at.desc()
-        )
+        # Count total tasks
+        count_query = f"SELECT COUNT(*) as total FROM ({base_query}) as filtered_tasks"
+        cur.execute(count_query, params)
+        total_tasks = cur.fetchone()['total']
         
-        # Paginate
-        tasks = query.paginate(
-            page=page,
-            per_page=per_page,
-            error_out=False
-        )
+        # Add ordering and pagination
+        base_query += " ORDER BY priority DESC, deadline ASC, created_at DESC"
+        base_query += " LIMIT %s OFFSET %s"
+        params.extend([per_page, (page - 1) * per_page])
+        
+        # Execute query
+        cur.execute(base_query, params)
+        tasks = cur.fetchall()
         
         # Calculate statistics
-        all_tasks = Task.query.filter_by(user_id=user_id).all()
-        stats = {
-            'total': len(all_tasks),
-            'completed': len([t for t in all_tasks if t.status == TaskStatus.COMPLETED]),
-            'pending': len([t for t in all_tasks if t.status == TaskStatus.PENDING]),
-            'in_progress': len([t for t in all_tasks if t.status == TaskStatus.IN_PROGRESS]),
-            'overdue': len([t for t in all_tasks if t.deadline and t.deadline < datetime.utcnow() and t.status != TaskStatus.COMPLETED]),
-            'decisions': len([t for t in all_tasks if t.category == TaskCategory.DECISION]),
-            'action_items': len([t for t in all_tasks if t.category == TaskCategory.ACTION_ITEM]),
-            'unresolved': len([t for t in all_tasks if t.category == TaskCategory.UNRESOLVED])
-        }
+        stats_query = """
+            SELECT 
+                COUNT(*) as total,
+                COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+                COUNT(CASE WHEN status = 'in_progress' THEN 1 END) as in_progress,
+                COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed,
+                COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled,
+                COUNT(CASE WHEN priority = 'high' THEN 1 END) as high_priority,
+                COUNT(CASE WHEN deadline < NOW() AND status != 'completed' THEN 1 END) as overdue
+            FROM tasks WHERE user_id = %s
+        """
+        cur.execute(stats_query, (user_id,))
+        stats = cur.fetchone()
+        
+        # Convert tasks to dict format
+        tasks_list = []
+        for task in tasks:
+            task_dict = dict(task)
+            # Convert datetime objects to strings
+            for key, value in task_dict.items():
+                if isinstance(value, datetime):
+                    task_dict[key] = value.isoformat()
+            tasks_list.append(task_dict)
         
         return jsonify({
-            'tasks': [task.to_dict() for task in tasks.items],
-            'statistics': stats,
+            'tasks': tasks_list,
             'pagination': {
                 'page': page,
                 'per_page': per_page,
-                'total': tasks.total,
-                'pages': tasks.pages,
-                'has_next': tasks.has_next,
-                'has_prev': tasks.has_prev
-            }
+                'total': total_tasks,
+                'pages': (total_tasks + per_page - 1) // per_page
+            },
+            'statistics': dict(stats)
         })
         
     except Exception as e:
-        logging.error(f"Get user tasks error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logging.error(f"Error fetching tasks: {e}")
+        return jsonify({'error': 'Failed to fetch tasks'}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+@task_bp.route('/tasks/<task_id>', methods=['GET'])
+def get_task(task_id):
+    """Get a specific task by ID"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
+            task = cur.fetchone()
+            
+            if not task:
+                return jsonify({'error': 'Task not found'}), 404
+            
+            # Convert to dict and handle datetime objects
+            task_dict = dict(task)
+            for key, value in task_dict.items():
+                if isinstance(value, datetime):
+                    task_dict[key] = value.isoformat()
+            
+            return jsonify(task_dict)
+            
+    except Exception as e:
+        logging.error(f"Error fetching task: {e}")
+        return jsonify({'error': 'Failed to fetch task'}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 @task_bp.route('/tasks', methods=['POST'])
 def create_task():
@@ -114,220 +164,182 @@ def create_task():
         data = request.get_json()
         
         # Validate required fields
-        required_fields = ['name', 'meeting_id', 'user_id', 'category']
+        required_fields = ['name', 'user_id']
         for field in required_fields:
             if field not in data:
                 return jsonify({'error': f'Missing required field: {field}'}), 400
         
-        # Validate meeting exists
-        meeting = Meeting.query.get(data['meeting_id'])
-        if not meeting:
-            return jsonify({'error': 'Meeting not found'}), 404
-        
-        # Validate user exists
-        user = User.query.get(data['user_id'])
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
-        # Create task
-        task = Task(
-            name=data['name'],
-            description=data.get('description', ''),
-            owner=data.get('owner', ''),
-            status=TaskStatus(data.get('status', 'pending')),
-            priority=TaskPriority(data.get('priority', 'medium')),
-            category=TaskCategory(data['category']),
-            meeting_id=data['meeting_id'],
-            user_id=data['user_id']
-        )
-        
-        # Parse deadline if provided
-        if 'deadline' in data and data['deadline']:
-            try:
-                task.deadline = datetime.fromisoformat(data['deadline'].replace('Z', '+00:00'))
-            except ValueError:
-                return jsonify({'error': 'Invalid deadline format. Use ISO 8601 format.'}), 400
-        
-        db.session.add(task)
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Task created successfully',
-            'task': task.to_dict()
-        }), 201
-        
-    except ValueError as e:
-        return jsonify({'error': f'Invalid enum value: {str(e)}'}), 400
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if user exists
+            cur.execute("SELECT id FROM users WHERE id = %s", (data['user_id'],))
+            user = cur.fetchone()
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+            
+            # Insert new task
+            insert_query = """
+                INSERT INTO tasks (name, description, user_id, meeting_id, priority, status, category, owner, deadline, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+                RETURNING *
+            """
+            
+            cur.execute(insert_query, (
+                data['name'],
+                data.get('description', ''),
+                data['user_id'],
+                data.get('meeting_id'),
+                data.get('priority', 'medium'),
+                data.get('status', 'pending'),
+                data.get('category', 'general'),
+                data.get('owner', ''),
+                data.get('deadline')
+            ))
+            
+            task = cur.fetchone()
+            conn.commit()
+            
+            # Convert to dict and handle datetime objects
+            task_dict = dict(task)
+            for key, value in task_dict.items():
+                if isinstance(value, datetime):
+                    task_dict[key] = value.isoformat()
+            
+            return jsonify(task_dict), 201
+            
     except Exception as e:
-        db.session.rollback()
-        logging.error(f"Create task error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@task_bp.route('/tasks/<task_id>', methods=['GET'])
-def get_task(task_id):
-    """Get a specific task"""
-    try:
-        task = Task.query.get(task_id)
-        if not task:
-            return jsonify({'error': 'Task not found'}), 404
-        
-        return jsonify({'task': task.to_dict()})
-        
-    except Exception as e:
-        logging.error(f"Get task error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logging.error(f"Error creating task: {e}")
+        return jsonify({'error': 'Failed to create task'}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 @task_bp.route('/tasks/<task_id>', methods=['PUT'])
 def update_task(task_id):
-    """Update a task"""
+    """Update an existing task"""
     try:
-        task = Task.query.get(task_id)
-        if not task:
-            return jsonify({'error': 'Task not found'}), 404
-        
         data = request.get_json()
         
-        # Update allowed fields
-        if 'name' in data:
-            task.name = data['name']
-        
-        if 'description' in data:
-            task.description = data['description']
-        
-        if 'owner' in data:
-            task.owner = data['owner']
-        
-        if 'status' in data:
-            task.status = TaskStatus(data['status'])
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
             
-            # Set completed_at if status is completed
-            if task.status == TaskStatus.COMPLETED and not task.completed_at:
-                task.completed_at = datetime.utcnow()
-            elif task.status != TaskStatus.COMPLETED:
-                task.completed_at = None
-        
-        if 'priority' in data:
-            task.priority = TaskPriority(data['priority'])
-        
-        if 'category' in data:
-            task.category = TaskCategory(data['category'])
-        
-        if 'deadline' in data:
-            if data['deadline']:
-                try:
-                    task.deadline = datetime.fromisoformat(data['deadline'].replace('Z', '+00:00'))
-                except ValueError:
-                    return jsonify({'error': 'Invalid deadline format. Use ISO 8601 format.'}), 400
-            else:
-                task.deadline = None
-        
-        task.updated_at = datetime.utcnow()
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Task updated successfully',
-            'task': task.to_dict()
-        })
-        
-    except ValueError as e:
-        return jsonify({'error': f'Invalid enum value: {str(e)}'}), 400
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if task exists
+            cur.execute("SELECT id FROM tasks WHERE id = %s", (task_id,))
+            task = cur.fetchone()
+            if not task:
+                return jsonify({'error': 'Task not found'}), 404
+            
+            # Build update query dynamically
+            update_fields = []
+            params = []
+            
+            allowed_fields = ['name', 'description', 'priority', 'status', 'category', 'owner', 'deadline']
+            for field in allowed_fields:
+                if field in data:
+                    update_fields.append(f"{field} = %s")
+                    params.append(data[field])
+            
+            if not update_fields:
+                return jsonify({'error': 'No valid fields to update'}), 400
+            
+            # Add updated_at
+            update_fields.append("updated_at = NOW()")
+            params.append(task_id)
+            
+            update_query = f"UPDATE tasks SET {', '.join(update_fields)} WHERE id = %s RETURNING *"
+            cur.execute(update_query, params)
+            
+            updated_task = cur.fetchone()
+            conn.commit()
+            
+            # Convert to dict and handle datetime objects
+            task_dict = dict(updated_task)
+            for key, value in task_dict.items():
+                if isinstance(value, datetime):
+                    task_dict[key] = value.isoformat()
+            
+            return jsonify(task_dict)
+            
     except Exception as e:
-        db.session.rollback()
-        logging.error(f"Update task error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logging.error(f"Error updating task: {e}")
+        return jsonify({'error': 'Failed to update task'}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 @task_bp.route('/tasks/<task_id>', methods=['DELETE'])
 def delete_task(task_id):
     """Delete a task"""
     try:
-        task = Task.query.get(task_id)
-        if not task:
-            return jsonify({'error': 'Task not found'}), 404
-        
-        db.session.delete(task)
-        db.session.commit()
-        
-        return jsonify({'message': 'Task deleted successfully'})
-        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        with conn.cursor() as cur:
+            # Check if task exists
+            cur.execute("SELECT id FROM tasks WHERE id = %s", (task_id,))
+            task = cur.fetchone()
+            if not task:
+                return jsonify({'error': 'Task not found'}), 404
+            
+            # Delete task
+            cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+            conn.commit()
+            
+            return jsonify({'message': 'Task deleted successfully'})
+            
     except Exception as e:
-        db.session.rollback()
-        logging.error(f"Delete task error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logging.error(f"Error deleting task: {e}")
+        return jsonify({'error': 'Failed to delete task'}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
-@task_bp.route('/tasks/<task_id>/complete', methods=['POST'])
-def complete_task(task_id):
-    """Mark a task as completed"""
+@task_bp.route('/tasks/user/<user_id>/stats', methods=['GET'])
+def get_task_stats(user_id):
+    """Get task statistics for a user"""
     try:
-        task = Task.query.get(task_id)
-        if not task:
-            return jsonify({'error': 'Task not found'}), 404
-        
-        task.status = TaskStatus.COMPLETED
-        task.completed_at = datetime.utcnow()
-        task.updated_at = datetime.utcnow()
-        
-        db.session.commit()
-        
-        return jsonify({
-            'message': 'Task completed successfully',
-            'task': task.to_dict()
-        })
-        
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+            
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Check if user exists
+            cur.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+            user = cur.fetchone()
+            if not user:
+                return jsonify({'error': 'User not found'}), 404
+            
+            # Get comprehensive statistics
+            stats_query = """
+                SELECT 
+                    COUNT(*) as total_tasks,
+                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_tasks,
+                    COUNT(CASE WHEN status = 'in_progress' THEN 1 END) as in_progress_tasks,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_tasks,
+                    COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled_tasks,
+                    COUNT(CASE WHEN priority = 'high' THEN 1 END) as high_priority_tasks,
+                    COUNT(CASE WHEN priority = 'medium' THEN 1 END) as medium_priority_tasks,
+                    COUNT(CASE WHEN priority = 'low' THEN 1 END) as low_priority_tasks,
+                    COUNT(CASE WHEN deadline < NOW() AND status != 'completed' THEN 1 END) as overdue_tasks,
+                    COUNT(CASE WHEN deadline BETWEEN NOW() AND NOW() + INTERVAL '7 days' AND status != 'completed' THEN 1 END) as due_this_week,
+                    COUNT(CASE WHEN created_at >= NOW() - INTERVAL '30 days' THEN 1 END) as created_last_30_days,
+                    COUNT(CASE WHEN updated_at >= NOW() - INTERVAL '7 days' AND status = 'completed' THEN 1 END) as completed_last_7_days
+                FROM tasks WHERE user_id = %s
+            """
+            cur.execute(stats_query, (user_id,))
+            stats = cur.fetchone()
+            
+            return jsonify(dict(stats))
+            
     except Exception as e:
-        db.session.rollback()
-        logging.error(f"Complete task error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@task_bp.route('/tasks/overdue/user/<user_id>', methods=['GET'])
-def get_overdue_tasks(user_id):
-    """Get overdue tasks for a user"""
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
-        overdue_tasks = Task.query.filter(
-            and_(
-                Task.user_id == user_id,
-                Task.deadline < datetime.utcnow(),
-                Task.status != TaskStatus.COMPLETED
-            )
-        ).order_by(Task.deadline.asc()).all()
-        
-        return jsonify({
-            'overdue_tasks': [task.to_dict() for task in overdue_tasks],
-            'count': len(overdue_tasks)
-        })
-        
-    except Exception as e:
-        logging.error(f"Get overdue tasks error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
-
-@task_bp.route('/tasks/upcoming/user/<user_id>', methods=['GET'])
-def get_upcoming_tasks(user_id):
-    """Get upcoming tasks for a user (next 7 days)"""
-    try:
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
-        # Get tasks due in the next 7 days
-        seven_days_from_now = datetime.utcnow() + timedelta(days=7)
-        
-        upcoming_tasks = Task.query.filter(
-            and_(
-                Task.user_id == user_id,
-                Task.deadline >= datetime.utcnow(),
-                Task.deadline <= seven_days_from_now,
-                Task.status != TaskStatus.COMPLETED
-            )
-        ).order_by(Task.deadline.asc()).all()
-        
-        return jsonify({
-            'upcoming_tasks': [task.to_dict() for task in upcoming_tasks],
-            'count': len(upcoming_tasks)
-        })
-        
-    except Exception as e:
-        logging.error(f"Get upcoming tasks error: {str(e)}")
-        return jsonify({'error': 'Internal server error'}), 500
+        logging.error(f"Error fetching task stats: {e}")
+        return jsonify({'error': 'Failed to fetch task statistics'}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()

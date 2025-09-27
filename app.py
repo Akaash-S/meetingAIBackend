@@ -41,8 +41,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import routes
-from routes import upload_bp, transcribe_bp, extract_bp, meeting_bp, notify_bp
-from routes.task_simple import task_bp
+from routes import upload_bp, transcribe_bp, extract_bp, meeting_bp, notify_bp, task_bp
 from routes.user import user_bp
 from routes.audio import audio_bp
 
