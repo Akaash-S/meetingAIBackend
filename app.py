@@ -33,14 +33,39 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 # Database connection pool
 DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://username:password@ep-xxx.us-east-1.aws.neon.tech/neondb?sslmode=require')
 
+# Create connection pool
+try:
+    db_pool = psycopg2.pool.SimpleConnectionPool(
+        minconn=1,
+        maxconn=20,
+        dsn=DATABASE_URL
+    )
+    print("✅ Database connection pool created")
+except Exception as e:
+    print(f"❌ Failed to create database pool: {e}")
+    db_pool = None
+
 def get_db_connection():
-    """Get database connection"""
+    """Get database connection from pool"""
     try:
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
+        if db_pool:
+            return db_pool.getconn()
+        else:
+            # Fallback to direct connection
+            return psycopg2.connect(DATABASE_URL)
     except Exception as e:
         logging.error(f"Database connection error: {e}")
         return None
+
+def return_db_connection(conn):
+    """Return database connection to pool"""
+    try:
+        if db_pool and conn:
+            db_pool.putconn(conn)
+    except Exception as e:
+        logging.error(f"Error returning connection to pool: {e}")
+        if conn:
+            conn.close()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -98,7 +123,8 @@ if __name__ == '__main__':
             sys.exit(1)
         
         print("🚀 Starting Flask development server...")
-        app.run(debug=True, host='0.0.0.0', port=5000)
+        # Use threaded=True to handle concurrent requests
+        app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
         
     except Exception as e:
         print(f"❌ Server startup failed: {e}")

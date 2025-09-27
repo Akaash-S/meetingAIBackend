@@ -11,12 +11,35 @@ load_dotenv()
 def get_db_connection():
     """Get database connection"""
     try:
-        DATABASE_URL = os.getenv('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
+        # Import the connection pool from the main app
+        from app import get_db_connection as app_get_db_connection
+        return app_get_db_connection()
+    except ImportError:
+        # Fallback if importing fails
+        try:
+            DATABASE_URL = os.getenv('DATABASE_URL')
+            conn = psycopg2.connect(DATABASE_URL)
+            return conn
+        except Exception as e:
+            logging.error(f"Database connection error: {e}")
+            return None
     except Exception as e:
         logging.error(f"Database connection error: {e}")
         return None
+
+def return_db_connection(conn):
+    """Return database connection to pool"""
+    try:
+        from app import return_db_connection as app_return_db_connection
+        app_return_db_connection(conn)
+    except ImportError:
+        # Fallback if importing fails
+        if conn:
+            conn.close()
+    except Exception as e:
+        logging.error(f"Error returning connection: {e}")
+        if conn:
+            conn.close()
 
 task_bp = Blueprint('task', __name__)
 
@@ -128,7 +151,7 @@ def get_user_tasks(user_id):
         return jsonify({'error': 'Failed to fetch tasks'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @task_bp.route('/tasks/<task_id>', methods=['GET'])
 def get_task(task_id):
@@ -158,7 +181,7 @@ def get_task(task_id):
         return jsonify({'error': 'Failed to fetch task'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @task_bp.route('/tasks', methods=['POST'])
 def create_task():
@@ -218,7 +241,7 @@ def create_task():
         return jsonify({'error': 'Failed to create task'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @task_bp.route('/tasks/<task_id>', methods=['PUT'])
 def update_task(task_id):
@@ -273,7 +296,7 @@ def update_task(task_id):
         return jsonify({'error': 'Failed to update task'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @task_bp.route('/tasks/<task_id>', methods=['DELETE'])
 def delete_task(task_id):
@@ -301,7 +324,7 @@ def delete_task(task_id):
         return jsonify({'error': 'Failed to delete task'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @task_bp.route('/tasks/user/<user_id>/stats', methods=['GET'])
 def get_task_stats(user_id):
@@ -345,7 +368,7 @@ def get_task_stats(user_id):
         return jsonify({'error': 'Failed to fetch task statistics'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @task_bp.route('/tasks/overdue/user/<user_id>', methods=['GET'])
 def get_overdue_tasks(user_id):
@@ -383,7 +406,7 @@ def get_overdue_tasks(user_id):
         return jsonify({'error': 'Failed to fetch overdue tasks'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @task_bp.route('/tasks/upcoming/user/<user_id>', methods=['GET'])
 def get_upcoming_tasks(user_id):
@@ -421,4 +444,4 @@ def get_upcoming_tasks(user_id):
         return jsonify({'error': 'Failed to fetch upcoming tasks'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)

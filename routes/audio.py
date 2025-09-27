@@ -19,6 +19,26 @@ audio_bp = Blueprint('audio', __name__)
 # WebSocket connections storage
 websocket_connections = {}
 
+def clean_base64_data(data):
+    """Clean base64 data by removing BOM and invalid characters"""
+    if not data:
+        return data
+    
+    # Remove BOM (Byte Order Mark) if present
+    if data.startswith('\ufeff'):
+        data = data[1:]
+    
+    # Remove any non-base64 characters
+    import re
+    data = re.sub(r'[^A-Za-z0-9+/=]', '', data)
+    
+    # Ensure proper padding
+    missing_padding = len(data) % 4
+    if missing_padding:
+        data += '=' * (4 - missing_padding)
+    
+    return data
+
 def get_db_connection():
     """Get database connection"""
     try:
@@ -43,11 +63,33 @@ class AudioProcessor:
     async def process_audio_chunk(self, audio_data, user_id, meeting_id=None):
         """Process audio chunk for transcription"""
         try:
-            # Decode base64 audio data
+            # Validate and clean audio data
+            if not audio_data or not isinstance(audio_data, str):
+                logging.warning("Invalid audio data received")
+                return None
+            
+            # Decode base64 audio data with proper error handling
             if audio_data.startswith('data:audio'):
                 audio_data = audio_data.split(',')[1]
             
-            audio_bytes = base64.b64decode(audio_data)
+            # Clean the base64 data to remove BOM and invalid characters
+            audio_data = clean_base64_data(audio_data.strip())
+            
+            # Validate base64 data
+            if not audio_data or len(audio_data) < 4:
+                logging.warning("Empty or too short audio data")
+                return None
+            
+            try:
+                audio_bytes = base64.b64decode(audio_data, validate=True)
+            except Exception as decode_error:
+                logging.error(f"Base64 decode error: {decode_error}")
+                return None
+            
+            # Validate audio data size
+            if len(audio_bytes) < 100:  # Minimum audio chunk size
+                logging.warning("Audio chunk too small, skipping")
+                return None
             
             # Send to RapidAPI for transcription
             transcript = await self.transcribe_audio(audio_bytes)
@@ -93,10 +135,19 @@ class AudioProcessor:
             )
             
             if response.status_code == 200:
-                result = response.json()
-                return result.get('transcript', '')
+                try:
+                    result = response.json()
+                    transcript = result.get('transcript', '')
+                    if transcript and isinstance(transcript, str):
+                        return transcript.strip()
+                    else:
+                        logging.warning("Empty or invalid transcript received")
+                        return None
+                except json.JSONDecodeError as json_error:
+                    logging.error(f"JSON decode error in transcription response: {json_error}")
+                    return None
             else:
-                logging.error(f"Transcription API error: {response.status_code}")
+                logging.error(f"Transcription API error: {response.status_code} - {response.text}")
                 return None
                 
         except Exception as e:
@@ -225,15 +276,35 @@ async def handle_websocket_connection(websocket, path):
         
         async for message in websocket:
             try:
-                data = json.loads(message)
+                # Validate message format
+                if not message or not isinstance(message, str):
+                    logging.warning("Invalid message format received")
+                    continue
+                
+                # Parse JSON with error handling
+                try:
+                    data = json.loads(message)
+                except json.JSONDecodeError as json_error:
+                    logging.error(f"JSON decode error: {json_error}")
+                    await websocket.send(json.dumps({
+                        'type': 'error',
+                        'message': 'Invalid JSON format'
+                    }))
+                    continue
                 
                 if data.get('type') == 'audio_chunk':
                     user_id = data.get('userId', 'anonymous')
                     meeting_id = data.get('meetingId')
                     
+                    # Validate audio data before processing
+                    audio_data = data.get('data', '')
+                    if not audio_data:
+                        logging.warning("Empty audio data received")
+                        continue
+                    
                     # Process audio chunk
                     transcript = await audio_processor.process_audio_chunk(
-                        data.get('data', ''),
+                        audio_data,
                         user_id,
                         meeting_id
                     )
@@ -300,6 +371,65 @@ async def handle_websocket_connection(websocket, path):
                         'type': 'recording_stopped',
                         'message': 'Meeting recording completed'
                     }))
+                
+                elif data.get('type') == 'process_audio':
+                    # Process complete audio workflow
+                    meeting_id = data.get('meetingId')
+                    user_id = data.get('userId')
+                    audio_data = data.get('audioData')
+                    meeting_title = data.get('meetingTitle', 'Meeting Recording')
+                    
+                    if not all([meeting_id, user_id, audio_data]):
+                        await websocket.send(json.dumps({
+                            'type': 'error',
+                            'message': 'Missing required data for audio processing'
+                        }))
+                        continue
+                    
+                    try:
+                        # Decode base64 audio data
+                        if audio_data.startswith('data:audio'):
+                            audio_data = audio_data.split(',')[1]
+                        
+                        audio_bytes = base64.b64decode(audio_data)
+                        
+                        # Import and use the audio processor service
+                        from services.audio_processor import AudioProcessorService
+                        processor = AudioProcessorService()
+                        
+                        # Send processing started message
+                        await websocket.send(json.dumps({
+                            'type': 'processing_started',
+                            'message': 'Starting audio processing...'
+                        }))
+                        
+                        # Process complete workflow
+                        result = await processor.process_complete_workflow(
+                            audio_bytes, meeting_id, user_id, meeting_title
+                        )
+                        
+                        if result.get('success'):
+                            await websocket.send(json.dumps({
+                                'type': 'processing_completed',
+                                'message': 'Audio processing completed successfully',
+                                'data': {
+                                    'meeting_id': result['meeting_id'],
+                                    'tasks_count': result['tasks_count'],
+                                    'file_url': result['file_url']
+                                }
+                            }))
+                        else:
+                            await websocket.send(json.dumps({
+                                'type': 'processing_error',
+                                'message': result.get('error', 'Unknown processing error')
+                            }))
+                            
+                    except Exception as e:
+                        logging.error(f"Error processing audio: {e}")
+                        await websocket.send(json.dumps({
+                            'type': 'processing_error',
+                            'message': f'Processing failed: {str(e)}'
+                        }))
                 
             except json.JSONDecodeError:
                 await websocket.send(json.dumps({

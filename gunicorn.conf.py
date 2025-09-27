@@ -1,14 +1,17 @@
-# Gunicorn configuration for Render deployment
-# This file contains optimized settings for production
+# Gunicorn configuration for Docker deployment
+# Optimized for containerized production environment
 
 import os
+import multiprocessing
 
 # Server socket
 bind = f"0.0.0.0:{os.getenv('PORT', '5000')}"
 backlog = 2048
 
-# Worker processes
-workers = 4
+# Worker processes - optimized for container environment
+# Use 2x CPU cores + 1, but cap at 8 for memory efficiency
+worker_count = min(multiprocessing.cpu_count() * 2 + 1, 8)
+workers = int(os.getenv('GUNICORN_WORKERS', worker_count))
 worker_class = "gevent"
 worker_connections = 1000
 timeout = 120
@@ -18,10 +21,10 @@ keepalive = 2
 max_requests = 1000
 max_requests_jitter = 100
 
-# Logging
+# Logging - optimized for container logs
 accesslog = "-"
 errorlog = "-"
-loglevel = "info"
+loglevel = os.getenv('LOG_LEVEL', 'info').lower()
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
 # Process naming
@@ -55,5 +58,11 @@ limit_request_line = 4094
 limit_request_fields = 100
 limit_request_field_size = 8190
 
-# Performance
-worker_tmp_dir = "/dev/shm"
+# Performance - optimized for containers
+worker_tmp_dir = "/tmp"
+
+# Memory management
+max_requests_jitter = 50
+
+# Graceful shutdown
+graceful_timeout = 30

@@ -1,4 +1,9 @@
-# Python
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Python cache and compiled files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -27,14 +32,14 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDE
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS
+# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -43,41 +48,90 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
-# Git
-.git/
-.gitignore
-
-# Logs
+# Logs and temporary files
 *.log
 logs/
+*.tmp
+*.temp
 
-# Environment files
+# Documentation and markdown files
+*.md
+README*
+LICENSE*
+CHANGELOG*
+
+# Test files
+tests/
+test_*.py
+*_test.py
+pytest.ini
+.pytest_cache/
+
+# Development and build files
 .env
 .env.local
 .env.development
 .env.test
 .env.production
+docker-compose*.yml
+Dockerfile*
+.dockerignore
 
-# Database
+# Database files
 *.db
+*.sqlite
 *.sqlite3
 
-# Uploads (will be created at runtime)
+# Upload directories (will be created at runtime)
 uploads/
+meetings/
 
-# Test files
-test_*.py
-*_test.py
-tests/
+# Instance directory (Flask instance folder)
+instance/
 
-# Documentation
-*.md
-docs/
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
 
-# Docker
-Dockerfile
-.dockerignore
-docker-compose.yml
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# Celery
+celerybeat-schedule
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# Backup files
+*.bak
+*.backup
+*.old
 
 # Temporary files
 tmp/

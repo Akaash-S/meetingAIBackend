@@ -250,6 +250,83 @@ def upload_meeting():
                 ))
                 conn.commit()
             
+            # Trigger complete audio processing workflow
+            try:
+                from services.audio_processor import AudioProcessorService
+                import asyncio
+                import threading
+                
+                def process_audio_async():
+                    """Process audio in background thread"""
+                    try:
+                        # Read the file content for processing
+                        file.seek(0)
+                        audio_data = file.read()
+                        
+                        # Create audio processor
+                        processor = AudioProcessorService()
+                        
+                        # Run the complete workflow
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        result = loop.run_until_complete(
+                            processor.process_complete_workflow(
+                                audio_data, meeting_id, user_id, title
+                            )
+                        )
+                        loop.close()
+                        
+                        # Update meeting status based on result
+                        if result.get('success'):
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    UPDATE meetings 
+                                    SET status = 'processed', 
+                                        transcript = %s,
+                                        timeline = %s,
+                                        updated_at = %s
+                                    WHERE id = %s
+                                """, (
+                                    result.get('transcript', ''),
+                                    result.get('timeline', ''),
+                                    datetime.now(),
+                                    meeting_id
+                                ))
+                                conn.commit()
+                        else:
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    UPDATE meetings 
+                                    SET status = 'error', 
+                                        updated_at = %s
+                                    WHERE id = %s
+                                """, (datetime.now(), meeting_id))
+                                conn.commit()
+                                
+                    except Exception as e:
+                        logging.error(f"Audio processing error: {e}")
+                        # Update meeting status to error
+                        try:
+                            with conn.cursor() as cursor:
+                                cursor.execute("""
+                                    UPDATE meetings 
+                                    SET status = 'error', 
+                                        updated_at = %s
+                                    WHERE id = %s
+                                """, (datetime.now(), meeting_id))
+                                conn.commit()
+                        except:
+                            pass
+                
+                # Start background processing
+                processing_thread = threading.Thread(target=process_audio_async)
+                processing_thread.daemon = True
+                processing_thread.start()
+                
+            except Exception as e:
+                logging.error(f"Failed to start audio processing: {e}")
+                # Continue with upload success even if processing fails
+            
             return jsonify({
                 'meeting_id': meeting_id,
                 'title': title,
@@ -257,7 +334,8 @@ def upload_meeting():
                 'file_size': file_size,
                 'storage_type': storage_type,
                 'status': 'uploaded',
-                'message': 'File uploaded successfully'
+                'message': 'File uploaded successfully. Processing will begin shortly.',
+                'processing': True
             }), 201
             
         except Exception as e:

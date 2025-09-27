@@ -14,12 +14,35 @@ user_bp = Blueprint('user', __name__)
 def get_db_connection():
     """Get database connection"""
     try:
-        DATABASE_URL = os.getenv('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
+        # Import the connection pool from the main app
+        from app import get_db_connection as app_get_db_connection
+        return app_get_db_connection()
+    except ImportError:
+        # Fallback if importing fails
+        try:
+            DATABASE_URL = os.getenv('DATABASE_URL')
+            conn = psycopg2.connect(DATABASE_URL)
+            return conn
+        except Exception as e:
+            logging.error(f"Database connection error: {e}")
+            return None
     except Exception as e:
         logging.error(f"Database connection error: {e}")
         return None
+
+def return_db_connection(conn):
+    """Return database connection to pool"""
+    try:
+        from app import return_db_connection as app_return_db_connection
+        app_return_db_connection(conn)
+    except ImportError:
+        # Fallback if importing fails
+        if conn:
+            conn.close()
+    except Exception as e:
+        logging.error(f"Error returning connection: {e}")
+        if conn:
+            conn.close()
 
 @user_bp.route('/user/register', methods=['POST'])
 def register_user():
@@ -91,7 +114,7 @@ def register_user():
             logging.error(f"Database error: {e}")
             return jsonify({'error': 'Database error'}), 500
         finally:
-            conn.close()
+            return_db_connection(conn)
         
     except Exception as e:
         logging.error(f"Register user error: {str(e)}")
@@ -119,7 +142,7 @@ def get_user(user_id):
             logging.error(f"Database error: {e}")
             return jsonify({'error': 'Database error'}), 500
         finally:
-            conn.close()
+            return_db_connection(conn)
         
     except Exception as e:
         logging.error(f"Get user error: {str(e)}")
@@ -179,7 +202,7 @@ def update_user(user_id):
             logging.error(f"Database error: {e}")
             return jsonify({'error': 'Database error'}), 500
         finally:
-            conn.close()
+            return_db_connection(conn)
         
     except Exception as e:
         logging.error(f"Update user error: {str(e)}")
@@ -231,7 +254,7 @@ def get_user_stats(user_id):
             logging.error(f"Database error: {e}")
             return jsonify({'error': 'Database error'}), 500
         finally:
-            conn.close()
+            return_db_connection(conn)
         
     except Exception as e:
         logging.error(f"Get user stats error: {str(e)}")

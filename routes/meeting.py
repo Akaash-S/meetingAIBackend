@@ -11,12 +11,35 @@ load_dotenv()
 def get_db_connection():
     """Get database connection"""
     try:
-        DATABASE_URL = os.getenv('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
+        # Import the connection pool from the main app
+        from app import get_db_connection as app_get_db_connection
+        return app_get_db_connection()
+    except ImportError:
+        # Fallback if importing fails
+        try:
+            DATABASE_URL = os.getenv('DATABASE_URL')
+            conn = psycopg2.connect(DATABASE_URL)
+            return conn
+        except Exception as e:
+            logging.error(f"Database connection error: {e}")
+            return None
     except Exception as e:
         logging.error(f"Database connection error: {e}")
         return None
+
+def return_db_connection(conn):
+    """Return database connection to pool"""
+    try:
+        from app import return_db_connection as app_return_db_connection
+        app_return_db_connection(conn)
+    except ImportError:
+        # Fallback if importing fails
+        if conn:
+            conn.close()
+    except Exception as e:
+        logging.error(f"Error returning connection: {e}")
+        if conn:
+            conn.close()
 
 meeting_bp = Blueprint('meeting', __name__)
 
@@ -63,7 +86,7 @@ def get_meeting(meeting_id):
         return jsonify({'error': 'Failed to fetch meeting'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @meeting_bp.route('/meetings/user/<user_id>', methods=['GET'])
 def get_user_meetings(user_id):
@@ -121,7 +144,7 @@ def get_user_meetings(user_id):
         return jsonify({'error': 'Failed to fetch meetings'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @meeting_bp.route('/meetings', methods=['POST'])
 def create_meeting():
@@ -177,7 +200,7 @@ def create_meeting():
         return jsonify({'error': 'Failed to create meeting'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @meeting_bp.route('/meetings/<meeting_id>', methods=['PUT'])
 def update_meeting(meeting_id):
@@ -232,7 +255,7 @@ def update_meeting(meeting_id):
         return jsonify({'error': 'Failed to update meeting'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @meeting_bp.route('/meetings/<meeting_id>', methods=['DELETE'])
 def delete_meeting(meeting_id):
@@ -263,7 +286,7 @@ def delete_meeting(meeting_id):
         return jsonify({'error': 'Failed to delete meeting'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
 
 @meeting_bp.route('/meetings/user/<user_id>/stats', methods=['GET'])
 def get_meeting_stats(user_id):
@@ -304,4 +327,4 @@ def get_meeting_stats(user_id):
         return jsonify({'error': 'Failed to fetch meeting statistics'}), 500
     finally:
         if 'conn' in locals():
-            conn.close()
+            return_db_connection(conn)
