@@ -1,5 +1,5 @@
-# AI Meeting Assistant Backend - Complete Requirements
-# Generated and optimized for Render deployment
+# AI Meeting Assistant Backend - Complete Requirements with All Dependencies
+# This file includes all dependencies to prevent ModuleNotFoundError on Render
 
 # Core Flask Framework
 Flask==3.0.0
@@ -15,7 +15,7 @@ psycopg2-binary==2.9.9
 # Environment and Configuration
 python-dotenv==1.0.0
 
-# HTTP Requests
+# HTTP Requests and Networking
 requests==2.31.0
 urllib3==2.0.7
 certifi==2024.8.30
@@ -30,14 +30,15 @@ python-engineio==4.12.2
 simple-websocket==1.1.0
 wsproto==1.2.0
 h11==0.14.0
+bidict==0.23.1
 
-# File Handling and Storage
+# AWS SDK (boto3) - Complete Package
 boto3==1.28.57
 botocore==1.31.85
 s3transfer==0.7.0
 jmespath==1.0.1
 
-# Supabase Integration
+# Supabase Integration - Complete Package
 supabase==2.3.4
 supafunc==0.3.3
 gotrue==1.3.1
@@ -52,11 +53,10 @@ annotated-types==0.7.0
 typing-inspection==0.4.0
 sniffio==1.3.1
 anyio==4.9.0
-h11==0.14.0
 deprecation==2.1.0
 StrEnum==0.4.15
 
-# AI/ML APIs
+# Google AI/ML APIs - Complete Package
 google-generativeai==0.3.2
 google-auth==2.23.3
 google-auth-oauthlib==1.1.0
@@ -117,5 +117,5 @@ multidict==6.4.3
 yarl==1.20.0
 aiohttp==3.11.18
 aiosignal==1.3.2
+async-timeout==4.0.3
 attrs==25.3.0
-bidict==0.23.1

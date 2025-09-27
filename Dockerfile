@@ -23,12 +23,14 @@ COPY requirements-simple.txt .
 COPY requirements-minimal.txt .
 COPY requirements-stable.txt .
 COPY requirements.txt .
+COPY requirements-complete.txt .
 
 # Install Python dependencies with multiple fallbacks
-RUN pip install --no-cache-dir -r requirements-simple.txt || \
+RUN pip install --no-cache-dir -r requirements-complete.txt || \
+    pip install --no-cache-dir -r requirements.txt || \
+    pip install --no-cache-dir -r requirements-simple.txt || \
     pip install --no-cache-dir -r requirements-minimal.txt || \
-    pip install --no-cache-dir -r requirements-stable.txt || \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements-stable.txt
 
 # Copy application code
 COPY . .
