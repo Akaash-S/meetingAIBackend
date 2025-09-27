@@ -1,8 +1,22 @@
 from flask import Blueprint, request, jsonify, current_app
 import logging
 from datetime import datetime, timedelta
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import os
+from dotenv import load_dotenv
 
-from models import db, Meeting, Task, TaskCategory, User
+load_dotenv()
+
+def get_db_connection():
+    """Get database connection"""
+    try:
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        logging.error(f"Database connection error: {e}")
+        return None
 
 meeting_bp = Blueprint('meeting', __name__)
 
@@ -55,58 +69,99 @@ def get_meeting(meeting_id):
 def get_user_meetings(user_id):
     """Get all meetings for a user"""
     try:
-        # Check if user exists
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
         
-        # Get query parameters
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-        status_filter = request.args.get('status')
-        
-        # Build query
-        query = Meeting.query.filter_by(user_id=user_id)
-        
-        if status_filter:
-            query = query.filter_by(status=status_filter)
-        
-        # Order by creation date (newest first)
-        query = query.order_by(Meeting.created_at.desc())
-        
-        # Paginate
-        meetings = query.paginate(
-            page=page, 
-            per_page=per_page, 
-            error_out=False
-        )
-        
-        # Get task counts for each meeting
-        meeting_data = []
-        for meeting in meetings.items:
-            meeting_dict = meeting.to_dict()
-            
-            # Count tasks by category
-            tasks = Task.query.filter_by(meeting_id=meeting.id).all()
-            meeting_dict['task_counts'] = {
-                'decisions': len([t for t in tasks if t.category == TaskCategory.DECISION]),
-                'action_items': len([t for t in tasks if t.category == TaskCategory.ACTION_ITEM]),
-                'unresolved': len([t for t in tasks if t.category == TaskCategory.UNRESOLVED])
-            }
-            
-            meeting_data.append(meeting_dict)
-        
-        return jsonify({
-            'meetings': meeting_data,
-            'pagination': {
-                'page': page,
-                'per_page': per_page,
-                'total': meetings.total,
-                'pages': meetings.pages,
-                'has_next': meetings.has_next,
-                'has_prev': meetings.has_prev
-            }
-        })
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Check if user exists
+                cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
+                user = cursor.fetchone()
+                if not user:
+                    return jsonify({'error': 'User not found'}), 404
+                
+                # Get query parameters
+                page = request.args.get('page', 1, type=int)
+                per_page = request.args.get('per_page', 10, type=int)
+                status_filter = request.args.get('status')
+                
+                # Build query
+                query = "SELECT * FROM meetings WHERE user_id = %s"
+                params = [user_id]
+                
+                if status_filter:
+                    query += " AND status = %s"
+                    params.append(status_filter)
+                
+                query += " ORDER BY created_at DESC"
+                
+                # Get total count
+                count_query = "SELECT COUNT(*) FROM meetings WHERE user_id = %s"
+                count_params = [user_id]
+                if status_filter:
+                    count_query += " AND status = %s"
+                    count_params.append(status_filter)
+                
+                cursor.execute(count_query, count_params)
+                total = cursor.fetchone()['count']
+                
+                # Add pagination
+                offset = (page - 1) * per_page
+                query += " LIMIT %s OFFSET %s"
+                params.extend([per_page, offset])
+                
+                cursor.execute(query, params)
+                meetings = cursor.fetchall()
+                
+                # Get task counts for each meeting
+                meeting_data = []
+                for meeting in meetings:
+                    meeting_dict = dict(meeting)
+                    
+                    # Count tasks by category
+                    cursor.execute("""
+                        SELECT category, COUNT(*) as count 
+                        FROM tasks 
+                        WHERE meeting_id = %s 
+                        GROUP BY category
+                    """, (meeting['id'],))
+                    task_counts = cursor.fetchall()
+                    
+                    counts = {'decisions': 0, 'action-items': 0, 'unresolved': 0}
+                    for count in task_counts:
+                        if count['category'] == 'decision':
+                            counts['decisions'] = count['count']
+                        elif count['category'] == 'action-item':
+                            counts['action-items'] = count['count']
+                        elif count['category'] == 'unresolved':
+                            counts['unresolved'] = count['count']
+                    
+                    meeting_dict['task_counts'] = counts
+                    meeting_data.append(meeting_dict)
+                
+                # Calculate pagination info
+                pages = (total + per_page - 1) // per_page
+                has_next = page < pages
+                has_prev = page > 1
+                
+                return jsonify({
+                    'meetings': meeting_data,
+                    'pagination': {
+                        'page': page,
+                        'per_page': per_page,
+                        'total': total,
+                        'pages': pages,
+                        'has_next': has_next,
+                        'has_prev': has_prev
+                    }
+                })
+                
+        except Exception as e:
+            logging.error(f"Database error: {e}")
+            return jsonify({'error': 'Database error'}), 500
+        finally:
+            conn.close()
         
     except Exception as e:
         logging.error(f"Get user meetings error: {str(e)}")

@@ -1,12 +1,9 @@
 # Flask and Core Dependencies
 Flask==2.3.3
 Flask-CORS==4.0.0
-Flask-SQLAlchemy==3.0.5
-Flask-Migrate==4.0.5
 Werkzeug==2.3.7
 
-# Database - Neon PostgreSQL
-SQLAlchemy==2.0.21
+# Database - Direct PostgreSQL connection
 psycopg2-binary==2.9.7
 
 # Environment and Configuration

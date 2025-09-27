@@ -1,9 +1,22 @@
 from flask import Blueprint, request, jsonify, current_app
 import logging
 from datetime import datetime, timedelta
-from sqlalchemy import and_, or_
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import os
+from dotenv import load_dotenv
 
-from models import db, Task, TaskStatus, TaskPriority, TaskCategory, User, Meeting
+load_dotenv()
+
+def get_db_connection():
+    """Get database connection"""
+    try:
+        DATABASE_URL = os.getenv('DATABASE_URL')
+        conn = psycopg2.connect(DATABASE_URL)
+        return conn
+    except Exception as e:
+        logging.error(f"Database connection error: {e}")
+        return None
 
 task_bp = Blueprint('task', __name__)
 
