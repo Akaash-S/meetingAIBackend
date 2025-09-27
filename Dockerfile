@@ -35,6 +35,9 @@ RUN pip install --no-cache-dir -r requirements-complete.txt || \
 # Copy application code
 COPY . .
 
+# Make startup script executable
+RUN chmod +x start.sh
+
 # Create necessary directories
 RUN mkdir -p uploads logs
 
@@ -44,11 +47,11 @@ RUN useradd --create-home --shell /bin/bash app && \
 USER app
 
 # Expose port (Render will override with $PORT)
-EXPOSE $PORT
+EXPOSE 5000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:$PORT/api/health || exit 1
+    CMD curl -f http://localhost:5000/api/health || exit 1
 
-# Start the application with dynamic port and configuration
-CMD gunicorn --config gunicorn.conf.py app:app
+# Start the application with startup script
+CMD ["./start.sh"]

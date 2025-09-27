@@ -1,8 +1,10 @@
 # Gunicorn configuration for Render deployment
 # This file contains optimized settings for production
 
+import os
+
 # Server socket
-bind = "0.0.0.0:${PORT}"
+bind = f"0.0.0.0:{os.getenv('PORT', '5000')}"
 backlog = 2048
 
 # Worker processes
