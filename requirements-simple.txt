@@ -12,4 +12,4 @@ structlog==23.2.0
 cryptography>=42.0.0
 python-dateutil==2.8.2
 gevent==23.9.1
-gevent-websocket==0.10.4
+gevent-websocket==0.10.1
