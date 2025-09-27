@@ -3,6 +3,7 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from werkzeug.utils import secure_filename
+import sys
 import os
 import uuid
 from datetime import datetime, timedelta
@@ -71,11 +72,48 @@ def internal_error(error):
     db.session.rollback()
     return jsonify({'error': 'Internal server error', 'message': 'An unexpected error occurred'}), 500
 
-# Create tables - moved to main block
-
 if __name__ == '__main__':
     with app.app_context():
-        db.create_all()
-        print("✅ Database tables created successfully")
+        try:
+            # Test database connection
+            with db.engine.connect() as connection:
+                connection.execute(db.text('SELECT 1'))
+            print("✅ Database connection successful")
+            
+            # Check if tables exist
+            with db.engine.connect() as connection:
+                result = connection.execute(db.text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"))
+                tables = [row[0] for row in result]
+            
+            expected_tables = ['users', 'meetings', 'tasks']
+            missing_tables = [table for table in expected_tables if table not in tables]
+            
+            if missing_tables:
+                print(f"⚠️ Missing tables: {missing_tables}")
+                print("📋 Creating missing tables...")
+                db.create_all()
+                print("✅ Database tables created successfully")
+                
+                # Verify tables were created
+                with db.engine.connect() as connection:
+                    result = connection.execute(db.text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"))
+                    tables = [row[0] for row in result]
+                
+                print(f"📋 Found tables: {tables}")
+                for table in expected_tables:
+                    if table in tables:
+                        print(f"✅ Table '{table}' exists")
+                    else:
+                        print(f"❌ Table '{table}' still missing")
+            else:
+                print("✅ All required tables exist")
+                print(f"📋 Found tables: {tables}")
+            
+        except Exception as e:
+            print(f"❌ Database setup failed: {e}")
+            print("Please check your DATABASE_URL in .env file")
+            print("Run 'python init_database.py' to initialize the database")
+            sys.exit(1)
     
+    print("🚀 Starting Flask development server...")
     app.run(debug=True, host='0.0.0.0', port=5000)

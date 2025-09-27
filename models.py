@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 import uuid
 
-# Create a placeholder that will be replaced
+# Initialize SQLAlchemy - will be configured in app.py
 db = SQLAlchemy()
 
 class TaskStatus(Enum):

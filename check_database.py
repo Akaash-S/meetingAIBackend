@@ -39,6 +39,7 @@ def check_database():
     db = SQLAlchemy(app)
     
     # Import models after db initialization
+    import models
     from models import User, Meeting, Task
     models.db = db
     
@@ -46,12 +47,15 @@ def check_database():
         try:
             # Test database connection
             logger.info("🔗 Testing database connection...")
-            db.engine.execute('SELECT 1')
+            with db.engine.connect() as connection:
+                connection.execute(db.text('SELECT 1'))
             logger.info("✅ Database connection successful")
             
             # Check tables
             logger.info("📋 Checking database tables...")
-            tables = db.engine.table_names()
+            with db.engine.connect() as connection:
+                result = connection.execute(db.text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'"))
+                tables = [row[0] for row in result]
             expected_tables = ['users', 'meetings', 'tasks']
             
             logger.info(f"Found tables: {tables}")
@@ -62,8 +66,9 @@ def check_database():
                     
                     # Check table structure
                     try:
-                        result = db.engine.execute(f"SELECT COUNT(*) FROM {table}")
-                        count = result.fetchone()[0]
+                        with db.engine.connect() as connection:
+                            result = connection.execute(db.text(f"SELECT COUNT(*) FROM {table}"))
+                            count = result.fetchone()[0]
                         logger.info(f"   📊 Records in '{table}': {count}")
                     except Exception as e:
                         logger.warning(f"   ⚠️ Could not count records in '{table}': {e}")
