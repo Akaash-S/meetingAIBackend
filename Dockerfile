@@ -50,5 +50,5 @@ EXPOSE $PORT
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:$PORT/api/health || exit 1
 
-# Start the application with dynamic port
-CMD gunicorn --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --keep-alive 2 --max-requests 1000 --max-requests-jitter 100 app:app
+# Start the application with dynamic port and configuration
+CMD gunicorn --config gunicorn.conf.py app:app

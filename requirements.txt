@@ -86,10 +86,10 @@ pycparser==2.22
 python-dateutil==2.8.2
 six==1.16.0
 
-# Production Dependencies
-gevent==23.9.1
+# Production Dependencies - Updated versions
+gevent==25.9.1
 gevent-websocket==0.10.1
-greenlet==3.2.1
+greenlet==3.2.4
 zope.event==6.0
 zope.interface==8.0.1
 
