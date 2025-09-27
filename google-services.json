@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "748746850944",
+    "project_id": "ai-classroom-assist",
+    "storage_bucket": "ai-classroom-assist.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:748746850944:android:cbad1173b0e8a032d9dc65",
+        "android_client_info": {
+          "package_name": "com.asolvitra.aiclassroomassistant"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "748746850944-spcsf2cds321jiv1dj53n25ojc77piq1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAyAvV0DStbnh8zO6hdCL0zyAnnvJ_HMDw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "748746850944-spcsf2cds321jiv1dj53n25ojc77piq1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
