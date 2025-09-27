@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 # Import routes
 from routes import upload_bp, transcribe_bp, extract_bp, meeting_bp, notify_bp
 from routes.task_simple import task_bp
+from routes.user import user_bp
+from routes.audio import audio_bp
 
 # Register blueprints
 app.register_blueprint(upload_bp, url_prefix='/api')
@@ -51,6 +53,8 @@ app.register_blueprint(extract_bp, url_prefix='/api')
 app.register_blueprint(meeting_bp, url_prefix='/api')
 app.register_blueprint(task_bp, url_prefix='/api')
 app.register_blueprint(notify_bp, url_prefix='/api')
+app.register_blueprint(user_bp, url_prefix='/api')
+app.register_blueprint(audio_bp, url_prefix='/api')
 
 # Health check endpoint
 @app.route('/api/health')

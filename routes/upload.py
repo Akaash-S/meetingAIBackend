@@ -124,19 +124,55 @@ def upload_meeting():
                 
                 if not user:
                     # Create user record for Firebase authenticated user
+                    user_name = request.form.get('user_name', 'Unknown User')
+                    user_email = request.form.get('user_email', f'{user_id}@example.com')
+                    user_photo = request.form.get('user_photo_url')
+                    
                     cursor.execute("""
-                        INSERT INTO users (id, name, email, role, created_at, updated_at)
-                        VALUES (%s, %s, %s, %s, %s, %s)
+                        INSERT INTO users (id, name, email, photo_url, role, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """, (
                         user_id,
-                        request.form.get('user_name', 'Unknown User'),
-                        request.form.get('user_email', f'{user_id}@example.com'),
+                        user_name,
+                        user_email,
+                        user_photo,
                         'user',
                         datetime.now(),
                         datetime.now()
                     ))
                     conn.commit()
-                    logging.info(f"Created new user: {user_id}")
+                    logging.info(f"Created new user: {user_id} ({user_name})")
+                else:
+                    # Update user info if provided
+                    user_name = request.form.get('user_name')
+                    user_email = request.form.get('user_email')
+                    user_photo = request.form.get('user_photo_url')
+                    
+                    if user_name or user_email or user_photo:
+                        update_fields = []
+                        params = []
+                        
+                        if user_name:
+                            update_fields.append("name = %s")
+                            params.append(user_name)
+                        
+                        if user_email:
+                            update_fields.append("email = %s")
+                            params.append(user_email)
+                        
+                        if user_photo:
+                            update_fields.append("photo_url = %s")
+                            params.append(user_photo)
+                        
+                        if update_fields:
+                            update_fields.append("updated_at = %s")
+                            params.append(datetime.now())
+                            params.append(user_id)
+                            
+                            query = f"UPDATE users SET {', '.join(update_fields)} WHERE id = %s"
+                            cursor.execute(query, params)
+                            conn.commit()
+                            logging.info(f"Updated user info: {user_id}")
         except Exception as e:
             logging.error(f"Database error: {e}")
             return jsonify({'error': 'Database error'}), 500
