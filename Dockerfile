@@ -17,11 +17,17 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
+# Copy requirements files for better caching
+COPY requirements-simple.txt .
+COPY requirements-minimal.txt .
+COPY requirements-stable.txt .
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with multiple fallbacks
+RUN pip install --no-cache-dir -r requirements-simple.txt || \
+    pip install --no-cache-dir -r requirements-minimal.txt || \
+    pip install --no-cache-dir -r requirements-stable.txt || \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .

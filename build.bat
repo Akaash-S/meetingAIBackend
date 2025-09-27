@@ -20,6 +20,13 @@ if %errorlevel% neq 0 (
 
 echo [INFO] Docker is installed and running
 
+REM Test requirements first
+echo [INFO] Testing requirements...
+python test_requirements.py
+if %errorlevel% neq 0 (
+    echo [WARNING] Some requirements failed, but continuing with Docker build...
+)
+
 REM Build the Docker image
 echo [INFO] Building Docker image...
 docker build -t ai-meeting-backend:latest .

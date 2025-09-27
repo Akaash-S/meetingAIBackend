@@ -1,17 +1,12 @@
-# Minimal requirements for AI Meeting Assistant Backend
-# This file contains only essential dependencies with stable versions
-
-# Core Flask
+# Core Flask dependencies
 Flask==3.0.0
 Flask-CORS==4.0.0
-
-# Production server
 gunicorn==21.2.0
 
 # Database
 psycopg2-binary==2.9.9
 
-# Environment
+# Environment and configuration
 python-dotenv==1.0.0
 
 # HTTP requests
@@ -24,15 +19,15 @@ flask-socketio==5.3.6
 # File handling
 Werkzeug==3.0.1
 
-# Basic logging
+# Logging and monitoring
 structlog==23.2.0
 
-# Security (latest stable)
+# Security - using stable version
 cryptography>=42.0.0
 
-# Date utilities
+# Utilities
 python-dateutil==2.8.2
 
-# Production WSGI
+# Production dependencies
 gevent==23.9.1
 gevent-websocket==0.10.4

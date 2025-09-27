@@ -22,11 +22,10 @@ Werkzeug==3.0.1
 # Logging and monitoring
 structlog==23.2.0
 
-# Security
-cryptography==41.0.8
+# Security - using latest compatible version
+cryptography>=42.0.0,<47.0.0
 
 # Utilities
-uuid==1.30
 python-dateutil==2.8.2
 
 # Production dependencies
