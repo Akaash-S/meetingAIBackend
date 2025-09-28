@@ -248,7 +248,7 @@ class CalendarService:
         return color_map.get(priority.lower(), '5')  # Default to yellow
     
     def schedule_tasks(self, tasks: List[Dict], user_id: str) -> Dict:
-        """Schedule multiple tasks in calendar with enhanced scheduling logic"""
+        """Schedule multiple tasks in calendar with enhanced scheduling logic using Gemini AI intelligence"""
         try:
             results = {
                 'successful': [],

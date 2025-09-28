@@ -57,6 +57,10 @@ class Meeting(db.Model):
     duration = db.Column(db.Integer)  # Duration in seconds
     participants = db.Column(db.Integer, default=0)
     status = db.Column(db.String(20), default='uploaded')  # uploaded, transcribed, processed
+    language = db.Column(db.String(10), default='en')  # Language detected from transcription
+    confidence = db.Column(db.Numeric(3, 2), default=0.0)  # Transcription confidence score
+    error_message = db.Column(db.Text)  # Error message if transcription fails
+    timeline = db.Column(db.JSON)  # Gemini AI generated timeline
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -77,6 +81,10 @@ class Meeting(db.Model):
             'duration': self.duration,
             'participants': self.participants,
             'status': self.status,
+            'language': self.language,
+            'confidence': float(self.confidence) if self.confidence else 0.0,
+            'error_message': self.error_message,
+            'timeline': self.timeline,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'user_id': self.user_id,

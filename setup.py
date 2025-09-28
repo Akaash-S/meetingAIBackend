@@ -28,29 +28,30 @@ def setup_environment():
             content = f.read()
         with open('.env', 'w') as f:
             f.write(content)
-        print("✅ Created .env file. Please edit it with your API keys.")
+        print("Created .env file. Please edit it with your API keys.")
     else:
-        print("✅ .env file already exists.")
+        print(".env file already exists.")
 
 def create_database():
     """Create database tables"""
     try:
-        from app import app, db
+        from app import app
+        from models import db
         with app.app_context():
             db.create_all()
-            print("✅ Database tables created successfully.")
+            print("Database tables created successfully.")
     except Exception as e:
-        print(f"❌ Error creating database: {e}")
+        print(f"Error creating database: {e}")
         print("Make sure to set up your database connection in .env file.")
 
 def main():
     """Main setup function"""
-    print("🚀 Setting up Meeting Assistant Backend...")
+    print("Setting up Meeting Assistant Backend...")
     
     try:
         # Install requirements
         install_requirements()
-        print("✅ Requirements installed successfully.")
+        print("Requirements installed successfully.")
         
         # Setup environment
         setup_environment()
@@ -58,14 +59,14 @@ def main():
         # Create database
         create_database()
         
-        print("\n🎉 Setup completed successfully!")
+        print("\nSetup completed successfully!")
         print("\nNext steps:")
         print("1. Edit .env file with your API keys")
         print("2. Run: python run.py")
         print("3. API will be available at http://localhost:5000")
         
     except Exception as e:
-        print(f"❌ Setup failed: {e}")
+        print(f"Setup failed: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

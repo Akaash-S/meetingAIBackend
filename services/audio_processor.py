@@ -22,7 +22,7 @@ load_dotenv()
 class AudioProcessorService:
     def __init__(self):
         self.rapidapi_key = os.getenv('RAPIDAPI_KEY')
-        self.rapidapi_host = os.getenv('RAPIDAPI_HOST', 'speech-to-text-api1.p.rapidapi.com')
+        self.rapidapi_host = 'speech-to-text-ai.p.rapidapi.com'
         self.gemini_api_key = os.getenv('GEMINI_API_KEY')
         self.supabase_url = os.getenv('SUPABASE_URL')
         self.supabase_key = os.getenv('SUPABASE_SERVICE_KEY') or os.getenv('SUPABASE_ANON_KEY')
@@ -91,10 +91,10 @@ class AudioProcessorService:
             return None
     
     async def transcribe_audio(self, audio_url: str) -> Optional[str]:
-        """Transcribe audio using Gemini API"""
+        """Transcribe audio using RapidAPI Speech-to-Text ONLY"""
         try:
-            if not self.gemini_api_key or not self.gemini_model:
-                logging.warning("Gemini API not configured")
+            if not self.rapidapi_key:
+                logging.error("RapidAPI key not configured - transcription requires RapidAPI")
                 return None
             
             # Download audio file
@@ -105,86 +105,124 @@ class AudioProcessorService:
             
             audio_data = response.content
             
-            # Convert audio to base64 for Gemini
+            # Convert audio to base64 for RapidAPI
             audio_base64 = base64.b64encode(audio_data).decode('utf-8')
             
-            # Create prompt for Gemini
-            prompt = f"""
-            Please transcribe this audio file accurately. The audio is from a meeting recording.
+            # Prepare RapidAPI request
+            url = f"https://{self.rapidapi_host}/transcribe"
             
-            Audio data (base64): {audio_base64}
+            # For file upload, we need to use multipart/form-data
+            files = {
+                'file': ('audio.webm', audio_data, 'audio/webm')
+            }
             
-            Please provide a clean, accurate transcript of the meeting content. Include:
-            - All spoken words
-            - Speaker changes (if detectable)
-            - Important pauses or emphasis
-            - Any background context that might be relevant
+            headers = {
+                "x-rapidapi-key": self.rapidapi_key,
+                "x-rapidapi-host": self.rapidapi_host
+            }
             
-            Return only the transcript text, no additional formatting or commentary.
-            """
+            # Make request to RapidAPI
+            response = requests.post(url, files=files, headers=headers, timeout=60)
             
-            # Use Gemini to transcribe
-            response = self.gemini_model.generate_content(prompt)
-            
-            if response and response.text:
-                transcript = response.text.strip()
-                logging.info(f"Transcription completed: {len(transcript)} characters")
-                return transcript
+            if response.status_code == 200:
+                result = response.json()
+                
+                if 'transcript' in result:
+                    transcript = result['transcript'].strip()
+                    logging.info(f"RapidAPI transcription completed: {len(transcript)} characters")
+                    return transcript
+                elif 'text' in result:
+                    transcript = result['text'].strip()
+                    logging.info(f"RapidAPI transcription completed: {len(transcript)} characters")
+                    return transcript
+                else:
+                    logging.error(f"Unexpected RapidAPI response format: {result}")
+                    return None
             else:
-                logging.warning("Empty transcript received from Gemini")
+                logging.error(f"RapidAPI transcription failed: {response.status_code} - {response.text}")
                 return None
                 
         except Exception as e:
-            logging.error(f"Error in Gemini transcription: {e}")
+            logging.error(f"Error in RapidAPI transcription: {e}")
             return None
     
     async def generate_timeline(self, transcript: str, meeting_duration: int) -> Optional[Dict]:
-        """Generate minute-to-minute timeline using Gemini AI"""
+        """Generate minute-to-minute timeline using Gemini AI ONLY"""
         try:
             if not self.gemini_api_key or not self.gemini_model:
-                logging.warning("Gemini API not configured")
+                logging.error("Gemini API not configured - timeline generation requires Gemini")
                 return None
             
             # Calculate approximate minutes
             minutes = max(1, meeting_duration // 60)
             
             prompt = f"""
-            Analyze this meeting transcript and create a comprehensive minute-to-minute timeline with key discussion points, decisions, and action items.
+            Create a comprehensive minute-to-minute timeline analysis of this meeting transcript using advanced AI analysis.
             
             Meeting Duration: {minutes} minutes
             Transcript: {transcript}
             
-            Please provide a JSON response with the following structure:
+            ANALYSIS REQUIREMENTS:
+            
+            1. TIMELINE STRUCTURE:
+               - Divide the meeting into logical minute-by-minute segments
+               - Each segment should capture the main discussion points and activities
+               - Ensure smooth flow and continuity between segments
+            
+            2. CONTENT ANALYSIS:
+               - Identify key discussion points and main topics
+               - Extract decisions made and their context
+               - Capture action items with clear ownership
+               - Note speaker contributions and participation
+               - Identify topics and themes discussed
+            
+            3. MEETING INTELLIGENCE:
+               - Determine meeting type and purpose
+               - Identify participants and their roles
+               - Extract overall meeting summary
+               - Identify key decisions and their impact
+               - Note next steps and follow-up requirements
+               - Identify blockers and challenges
+               - Extract success metrics and KPIs mentioned
+            
+            Return a comprehensive JSON structure:
             {{
                 "timeline": [
                     {{
                         "minute": 1,
-                        "summary": "Key discussion points in minute 1",
-                        "key_points": ["Point 1", "Point 2"],
-                        "decisions": ["Decision made"],
-                        "action_items": ["Action item 1", "Action item 2"],
-                        "speakers": ["Speaker 1", "Speaker 2"],
-                        "topics": ["Topic 1", "Topic 2"]
+                        "summary": "Concise summary of minute 1 activities",
+                        "key_points": ["Main discussion point 1", "Main discussion point 2"],
+                        "decisions": ["Specific decision made with context"],
+                        "action_items": ["Clear action item with owner"],
+                        "speakers": ["Primary speakers in this minute"],
+                        "topics": ["Main topics/themes discussed"]
                     }},
                     ...
                 ],
-                "overall_summary": "Brief overall meeting summary",
-                "key_decisions": ["Major decision 1", "Major decision 2"],
-                "action_items": ["Action item 1", "Action item 2", "Action item 3"],
-                "participants": ["Participant 1", "Participant 2"],
-                "meeting_type": "Type of meeting (standup, planning, review, etc.)",
-                "next_steps": ["Next step 1", "Next step 2"],
-                "blockers": ["Blocker 1", "Blocker 2"],
-                "success_metrics": ["Metric 1", "Metric 2"]
+                "overall_summary": "Comprehensive meeting summary with key outcomes",
+                "key_decisions": ["Major decisions with context and impact"],
+                "action_items": ["All action items with clear ownership"],
+                "participants": ["All meeting participants identified"],
+                "meeting_type": "Specific meeting type (standup, planning, review, client-meeting, etc.)",
+                "next_steps": ["Clear next steps with timelines"],
+                "blockers": ["Identified blockers and challenges"],
+                "success_metrics": ["KPIs, metrics, and success criteria mentioned"]
             }}
             
-            Make sure the timeline covers the entire meeting duration and includes specific, actionable items.
-            Focus on:
-            - Clear, actionable next steps
-            - Important decisions made
-            - Key discussion points
-            - Any blockers or concerns raised
-            - Success metrics or KPIs mentioned
+            ANALYSIS FOCUS:
+            - Extract maximum value from the meeting content
+            - Ensure all important information is captured
+            - Provide actionable insights and clear next steps
+            - Identify patterns, themes, and key outcomes
+            - Capture both explicit and implicit information
+            - Maintain chronological accuracy and logical flow
+            
+            Ensure the timeline is:
+            - Comprehensive and detailed
+            - Chronologically accurate
+            - Actionable and specific
+            - Well-structured and easy to follow
+            - Rich in context and insights
             """
             
             response = self.gemini_model.generate_content(prompt)
@@ -212,52 +250,76 @@ class AudioProcessorService:
             return None
     
     async def extract_tasks(self, transcript: str, timeline: Dict) -> List[Dict]:
-        """Extract tasks from transcript and timeline"""
+        """Extract tasks from transcript and timeline using Gemini AI ONLY"""
         try:
             if not self.gemini_api_key or not self.gemini_model:
-                logging.warning("Gemini API not configured")
+                logging.error("Gemini API not configured - task extraction requires Gemini")
                 return []
             
             prompt = f"""
-            Extract specific, actionable tasks from this meeting transcript and timeline.
+            Analyze this meeting transcript and timeline to extract actionable tasks with intelligent priority framing.
             
             Transcript: {transcript}
             Timeline: {json.dumps(timeline, indent=2)}
             
-            For each task, provide:
-            - Clear, actionable description
-            - Priority level (high, medium, low)
-            - Assigned person (if mentioned)
-            - Due date (if mentioned)
-            - Category (work, personal, follow-up, etc.)
-            - Estimated effort (1-5 scale)
-            - Dependencies (if any)
+            TASK EXTRACTION GUIDELINES:
             
-            Return as JSON array:
+            1. PRIORITY FRAMING (Use these criteria):
+               - HIGH: Critical deadlines, blocking issues, urgent decisions, client-facing deliverables
+               - MEDIUM: Important but not urgent, team coordination, process improvements
+               - LOW: Nice-to-have items, long-term planning, optional follow-ups
+            
+            2. EFFORT ESTIMATION (1-5 scale):
+               - 1: Quick task (< 30 minutes) - emails, simple calls, basic research
+               - 2: Short task (30min - 2 hours) - document review, simple analysis
+               - 3: Medium task (2-4 hours) - report writing, moderate research
+               - 4: Complex task (4-8 hours) - detailed analysis, complex coordination
+               - 5: Major task (8+ hours) - project planning, comprehensive reports
+            
+            3. CATEGORY CLASSIFICATION:
+               - "work": Core business tasks, project deliverables
+               - "follow-up": Meeting follow-ups, status updates
+               - "communication": Emails, calls, stakeholder updates
+               - "research": Information gathering, analysis
+               - "review": Document review, approval processes
+               - "planning": Strategic planning, roadmap items
+            
+            4. CONTEXT EXTRACTION:
+               - Extract relevant meeting context, decisions, and background
+               - Include any constraints, requirements, or special considerations
+               - Note any dependencies or prerequisites mentioned
+            
+            Return as JSON array with enhanced task analysis:
             [
                 {{
-                    "name": "Task description",
-                    "description": "Detailed task description",
+                    "name": "Clear, actionable task title",
+                    "description": "Detailed description with context and requirements",
                     "priority": "high|medium|low",
                     "assignee": "Person name or 'Unassigned'",
                     "due_date": "YYYY-MM-DD or null",
-                    "category": "work|personal|follow-up|other",
+                    "category": "work|follow-up|communication|research|review|planning",
                     "status": "pending",
                     "effort": 1-5,
-                    "dependencies": ["Task 1", "Task 2"],
-                    "tags": ["tag1", "tag2"],
-                    "context": "Additional context from meeting"
+                    "dependencies": ["Related task names"],
+                    "tags": ["relevant", "keywords"],
+                    "context": "Meeting context, decisions, constraints, and background information"
                 }}
             ]
             
-            Focus on concrete, actionable items that can be tracked and completed.
-            Include:
-            - All explicit action items mentioned
-            - Follow-up tasks
-            - Research tasks
-            - Communication tasks
-            - Review tasks
-            - Any commitments made during the meeting
+            EXTRACTION FOCUS:
+            - Extract ALL explicit action items and commitments
+            - Identify implicit tasks from decisions and discussions
+            - Include follow-up communications and status updates
+            - Capture research and analysis requirements
+            - Note review and approval processes
+            - Include any blocking issues or dependencies
+            
+            Ensure each task is:
+            - Specific and actionable
+            - Properly prioritized based on urgency and importance
+            - Categorized appropriately
+            - Estimated for effort realistically
+            - Contextualized with meeting background
             """
             
             response = self.gemini_model.generate_content(prompt)

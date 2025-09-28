@@ -3,7 +3,8 @@
 Flask application runner
 """
 import os
-from app import app, db
+from app import app
+from models import db
 
 if __name__ == '__main__':
     # Create database tables

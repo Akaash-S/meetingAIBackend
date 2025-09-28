@@ -16,10 +16,12 @@ class Config:
     ALLOWED_EXTENSIONS = {'mp3', 'mp4', 'wav', 'm4a', 'avi', 'mov', 'wmv', 'flv', 'webm'}
     
     # API Keys
+    # RapidAPI - Used ONLY for transcription
     RAPIDAPI_KEY = os.getenv('RAPIDAPI_KEY')
-    RAPIDAPI_HOST = os.getenv('RAPIDAPI_HOST', 'speech-to-text-api1.p.rapidapi.com')
+    RAPIDAPI_HOST = os.getenv('RAPIDAPI_HOST', 'speech-to-text-ai.p.rapidapi.com')
+    
+    # Gemini API - Used ONLY for timeline generation, task extraction, and calendar intelligence
     GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-    ASSEMBLYAI_API_KEY = os.getenv('ASSEMBLYAI_API_KEY')
     
     # File Storage
     SUPABASE_URL = os.getenv('SUPABASE_URL')
@@ -38,7 +40,7 @@ class Config:
     # Google Calendar
     GOOGLE_CREDENTIALS_FILE = os.getenv('GOOGLE_CREDENTIALS_FILE')
     
-    # Service Configuration
+    # Service Configuration - ONLY RapidAPI supported for transcription
     TRANSCRIPTION_SERVICE = os.getenv('TRANSCRIPTION_SERVICE', 'rapidapi')
 
 class DevelopmentConfig(Config):

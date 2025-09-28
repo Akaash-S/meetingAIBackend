@@ -67,8 +67,13 @@ def get_user_tasks(user_id):
             search_term = request.args.get('search')
             meeting_id = request.args.get('meeting_id')
             
-            # Build base query
-            base_query = "SELECT id, name, description, status, priority, category, deadline, created_at FROM tasks WHERE user_id = %s"
+            # Build base query with all available columns
+            base_query = """
+                SELECT id, name, description, status, priority, category, deadline, created_at, 
+                       owner, meeting_id, user_id, updated_at, completed_at,
+                       effort, dependencies, tags, context
+                FROM tasks WHERE user_id = %s
+            """
             params = [user_id]
             
             # Apply filters
@@ -120,15 +125,22 @@ def get_user_tasks(user_id):
             
             # Convert tasks to dict format
             tasks_list = []
-            column_names = ['id', 'name', 'description', 'status', 'priority', 'category', 'deadline', 'created_at']
+            column_names = [
+                'id', 'name', 'description', 'status', 'priority', 'category', 'deadline', 'created_at',
+                'owner', 'meeting_id', 'user_id', 'updated_at', 'completed_at',
+                'effort', 'dependencies', 'tags', 'context'
+            ]
             for task in tasks:
                 task_dict = {}
                 for i, value in enumerate(task):
-                    key = column_names[i]
-                    if isinstance(value, datetime):
-                        task_dict[key] = value.isoformat()
-                    else:
-                        task_dict[key] = value
+                    if i < len(column_names):
+                        key = column_names[i]
+                        if isinstance(value, datetime):
+                            task_dict[key] = value.isoformat()
+                        elif value is None:
+                            task_dict[key] = None
+                        else:
+                            task_dict[key] = value
                 tasks_list.append(task_dict)
         
         return jsonify({
@@ -387,7 +399,10 @@ def get_overdue_tasks(user_id):
             
             # Get overdue tasks
             cur.execute("""
-                SELECT * FROM tasks 
+                SELECT id, name, description, status, priority, category, deadline, created_at, 
+                       owner, meeting_id, user_id, updated_at, completed_at,
+                       effort, dependencies, tags, context
+                FROM tasks 
                 WHERE user_id = %s 
                 AND deadline < NOW() 
                 AND status != 'completed'
@@ -425,7 +440,10 @@ def get_upcoming_tasks(user_id):
             
             # Get upcoming tasks (due within next 7 days)
             cur.execute("""
-                SELECT * FROM tasks 
+                SELECT id, name, description, status, priority, category, deadline, created_at, 
+                       owner, meeting_id, user_id, updated_at, completed_at,
+                       effort, dependencies, tags, context
+                FROM tasks 
                 WHERE user_id = %s 
                 AND deadline BETWEEN NOW() AND NOW() + INTERVAL '7 days'
                 AND status != 'completed'

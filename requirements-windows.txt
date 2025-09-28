@@ -7,8 +7,7 @@ Werkzeug==2.3.7
 
 # Database - Windows compatible
 SQLAlchemy==2.0.21
-# Use psycopg2 instead of psycopg2-binary on Windows
-psycopg2==2.9.7
+psycopg2-binary
 
 # Environment and Configuration
 python-dotenv==1.0.0

@@ -30,6 +30,12 @@ CORS(app,
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your-secret-key-here')
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 
+# SQLAlchemy Configuration
+from models import db
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db.init_app(app)
+
 # Database connection pool
 DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://username:password@ep-xxx.us-east-1.aws.neon.tech/neondb?sslmode=require')
 
@@ -40,9 +46,9 @@ try:
         maxconn=20,
         dsn=DATABASE_URL
     )
-    print("✅ Database connection pool created")
+    print("OK: Database connection pool created")
 except Exception as e:
-    print(f"❌ Failed to create database pool: {e}")
+    print(f"ERROR: Failed to create database pool: {e}")
     db_pool = None
 
 def get_db_connection():
@@ -72,9 +78,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Import routes
-from routes import upload_bp, transcribe_bp, extract_bp, meeting_bp, notify_bp, task_bp
+from routes import upload_bp, extract_bp, meeting_bp, notify_bp, task_bp
 from routes.user import user_bp
 from routes.audio import audio_bp
+from routes.transcribe import transcribe_bp
 
 # Register blueprints
 app.register_blueprint(upload_bp, url_prefix='/api')
@@ -116,16 +123,16 @@ if __name__ == '__main__':
             with conn.cursor() as cursor:
                 cursor.execute('SELECT 1')
             conn.close()
-            print("✅ Database connection successful")
+            print("OK: Database connection successful")
         else:
-            print("❌ Database connection failed")
+            print("ERROR: Database connection failed")
             print("Please check your DATABASE_URL in .env file")
             sys.exit(1)
         
-        print("🚀 Starting Flask development server...")
+        print("Starting Flask development server...")
         # Use threaded=True to handle concurrent requests
         app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
         
     except Exception as e:
-        print(f"❌ Server startup failed: {e}")
+        print(f"ERROR: Server startup failed: {e}")
         sys.exit(1)

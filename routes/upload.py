@@ -2,12 +2,17 @@ from flask import Blueprint, request, jsonify, current_app
 from werkzeug.utils import secure_filename
 import os
 import uuid
+import json
 from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
 import logging
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 upload_bp = Blueprint('upload', __name__)
 
@@ -18,12 +23,18 @@ UPLOAD_FOLDER = 'uploads'
 def get_db_connection():
     """Get database connection"""
     try:
-        import os
-        from dotenv import load_dotenv
-        load_dotenv()
-        DATABASE_URL = os.getenv('DATABASE_URL')
-        conn = psycopg2.connect(DATABASE_URL)
-        return conn
+        # Import the connection pool from the main app
+        from app import get_db_connection as app_get_db_connection
+        return app_get_db_connection()
+    except ImportError:
+        # Fallback if importing fails
+        try:
+            DATABASE_URL = os.getenv('DATABASE_URL')
+            conn = psycopg2.connect(DATABASE_URL)
+            return conn
+        except Exception as e:
+            logging.error(f"Database connection error: {e}")
+            return None
     except Exception as e:
         logging.error(f"Database connection error: {e}")
         return None
@@ -369,7 +380,10 @@ def get_upload_status(meeting_id):
                     'status': meeting['status'],
                     'file_name': meeting['file_name'],
                     'file_size': meeting['file_size'],
-                    'created_at': meeting['created_at'].isoformat() if meeting['created_at'] else None
+                    'file_path': meeting['file_path'],
+                    'created_at': meeting['created_at'].isoformat() if meeting['created_at'] else None,
+                    'updated_at': meeting['updated_at'].isoformat() if meeting['updated_at'] else None,
+                    'can_transcribe': meeting['status'] == 'uploaded'
                 })
         except Exception as e:
             logging.error(f"Database error: {e}")
@@ -379,4 +393,166 @@ def get_upload_status(meeting_id):
         
     except Exception as e:
         logging.error(f"Status check error: {str(e)}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+@upload_bp.route('/upload/auto-transcribe/<meeting_id>', methods=['POST'])
+def auto_transcribe_meeting(meeting_id):
+    """Automatically start transcription for a meeting"""
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return jsonify({'error': 'Database connection failed'}), 500
+        
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Get meeting details
+                cursor.execute("SELECT * FROM meetings WHERE id = %s", (meeting_id,))
+                meeting = cursor.fetchone()
+                
+                if not meeting:
+                    return jsonify({'error': 'Meeting not found'}), 404
+                
+                # Log the current status for debugging
+                logging.info(f"Meeting {meeting_id} current status: {meeting['status']}")
+                
+                if meeting['status'] != 'uploaded':
+                    return jsonify({
+                        'error': f'Meeting status is {meeting["status"]}, cannot transcribe',
+                        'current_status': meeting['status'],
+                        'meeting_id': meeting_id
+                    }), 400
+                
+                # Update status to transcribing
+                cursor.execute("""
+                    UPDATE meetings 
+                    SET status = 'transcribing', updated_at = NOW()
+                    WHERE id = %s
+                """, (meeting_id,))
+                conn.commit()
+                
+                # Start background transcription
+                import threading
+                import asyncio
+                
+                def transcribe_async():
+                    try:
+                        from services.audio_processor import AudioProcessorService
+                        
+                        # Create audio processor
+                        processor = AudioProcessorService()
+                        
+                        # Get file URL from Supabase
+                        file_url = meeting['file_path']
+                        if not file_url:
+                            logging.error(f"No file path found for meeting {meeting_id}")
+                            return
+                        
+                        # Run complete workflow in asyncio loop
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                        # Step 1: Transcribe audio using RapidAPI
+                        logging.info(f"Starting RapidAPI transcription for meeting {meeting_id}")
+                        transcript = loop.run_until_complete(
+                            processor.transcribe_audio(file_url)
+                        )
+                        
+                        if transcript:
+                            # Update meeting with transcript
+                            with conn.cursor() as update_cursor:
+                                update_cursor.execute("""
+                                    UPDATE meetings 
+                                    SET transcript = %s, status = 'transcribed', updated_at = NOW()
+                                    WHERE id = %s
+                                """, (transcript, meeting_id))
+                                conn.commit()
+                                logging.info(f"RapidAPI transcription completed for meeting {meeting_id}")
+                            
+                            # Step 2: Generate timeline using Gemini AI
+                            logging.info(f"Starting Gemini timeline generation for meeting {meeting_id}")
+                            meeting_duration = meeting.get('duration', 1800)  # Default 30 minutes
+                            timeline = loop.run_until_complete(
+                                processor.generate_timeline(transcript, meeting_duration)
+                            )
+                            
+                            if timeline:
+                                # Step 3: Extract tasks using Gemini AI
+                                logging.info(f"Starting Gemini task extraction for meeting {meeting_id}")
+                                tasks = loop.run_until_complete(
+                                    processor.extract_tasks(transcript, timeline)
+                                )
+                                
+                                # Step 4: Save tasks to database
+                                if tasks:
+                                    success = loop.run_until_complete(
+                                        processor.save_tasks_to_database(tasks, meeting_id, meeting['user_id'])
+                                    )
+                                    if success:
+                                        logging.info(f"Saved {len(tasks)} tasks to database")
+                                
+                                # Step 5: Update meeting with timeline and mark as processed
+                                with conn.cursor() as update_cursor:
+                                    update_cursor.execute("""
+                                        UPDATE meetings 
+                                        SET timeline = %s, status = 'processed', updated_at = NOW()
+                                        WHERE id = %s
+                                    """, (json.dumps(timeline), meeting_id))
+                                    conn.commit()
+                                    logging.info(f"Complete workflow finished for meeting {meeting_id}")
+                            else:
+                                # Update status to timeline error
+                                with conn.cursor() as update_cursor:
+                                    update_cursor.execute("""
+                                        UPDATE meetings 
+                                        SET status = 'timeline_error', updated_at = NOW()
+                                        WHERE id = %s
+                                    """, (meeting_id,))
+                                    conn.commit()
+                                    logging.error(f"Timeline generation failed for meeting {meeting_id}")
+                        else:
+                            # Update status to transcription error
+                            with conn.cursor() as update_cursor:
+                                update_cursor.execute("""
+                                    UPDATE meetings 
+                                    SET status = 'transcription_error', updated_at = NOW()
+                                    WHERE id = %s
+                                """, (meeting_id,))
+                                conn.commit()
+                                logging.error(f"RapidAPI transcription failed for meeting {meeting_id}")
+                        
+                        loop.close()
+                                
+                    except Exception as e:
+                        logging.error(f"Complete workflow error for meeting {meeting_id}: {e}")
+                        # Update status to error
+                        try:
+                            with conn.cursor() as update_cursor:
+                                update_cursor.execute("""
+                                    UPDATE meetings 
+                                    SET status = 'processing_error', updated_at = NOW()
+                                    WHERE id = %s
+                                """, (meeting_id,))
+                                conn.commit()
+                        except:
+                            pass
+                
+                # Start transcription in background thread
+                transcription_thread = threading.Thread(target=transcribe_async)
+                transcription_thread.daemon = True
+                transcription_thread.start()
+                
+                return jsonify({
+                    'meeting_id': meeting_id,
+                    'status': 'transcribing',
+                    'message': 'Transcription started successfully'
+                })
+                
+        except Exception as e:
+            logging.error(f"Database error: {e}")
+            return jsonify({'error': 'Database error'}), 500
+        finally:
+            conn.close()
+        
+    except Exception as e:
+        logging.error(f"Auto-transcription error: {str(e)}")
         return jsonify({'error': 'Internal server error'}), 500

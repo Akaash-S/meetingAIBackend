@@ -25,11 +25,11 @@ def get_db_connection():
 extract_bp = Blueprint('extract', __name__)
 
 def extract_with_gemini(transcript, meeting_id):
-    """Extract tasks, decisions, and unresolved questions using Gemini API"""
+    """Extract tasks, decisions, and unresolved questions using Gemini API ONLY"""
     try:
         api_key = os.getenv('GEMINI_API_KEY')
         if not api_key:
-            raise ValueError("Gemini API key not configured")
+            raise ValueError("Gemini API key not configured - extraction requires Gemini")
         
         # Prepare the prompt for Gemini
         prompt = f"""

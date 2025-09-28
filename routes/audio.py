@@ -54,7 +54,7 @@ def get_db_connection():
 class AudioProcessor:
     def __init__(self):
         self.rapidapi_key = os.getenv('RAPIDAPI_KEY')
-        self.rapidapi_host = os.getenv('RAPIDAPI_HOST', 'speech-to-text-api1.p.rapidapi.com')
+        self.rapidapi_host = 'speech-to-text-ai.p.rapidapi.com'
         self.gemini_api_key = os.getenv('GEMINI_API_KEY')
         self.current_transcript = ""
         self.meeting_tasks = []
@@ -97,10 +97,9 @@ class AudioProcessor:
             if transcript:
                 self.current_transcript += transcript + " "
                 
-                # Extract tasks and insights every 60 seconds
-                if len(self.current_transcript.split()) > 100:  # Roughly 60 seconds
-                    await self.extract_insights(user_id, meeting_id)
-                    self.current_transcript = ""  # Reset for next chunk
+                # Note: Task extraction moved to post-transcription phase using Gemini API
+                # This ensures Gemini is only used for timeline generation and task extraction
+                # not during the transcription process itself
                 
                 return transcript
                 
@@ -117,18 +116,18 @@ class AudioProcessor:
             
             # Prepare headers for RapidAPI
             headers = {
-                'X-RapidAPI-Key': self.rapidapi_key,
-                'X-RapidAPI-Host': self.rapidapi_host
+                'x-rapidapi-key': self.rapidapi_key,
+                'x-rapidapi-host': self.rapidapi_host
             }
             
             # Prepare files for upload
             files = {
-                'audio': ('audio.webm', audio_bytes, 'audio/webm')
+                'file': ('audio.webm', audio_bytes, 'audio/webm')
             }
             
             # Make request to RapidAPI
             response = requests.post(
-                'https://speech-to-text-api1.p.rapidapi.com/transcribe',
+                f'https://{self.rapidapi_host}/transcribe',
                 headers=headers,
                 files=files,
                 timeout=30
@@ -155,10 +154,10 @@ class AudioProcessor:
             return None
     
     async def extract_insights(self, user_id, meeting_id):
-        """Extract tasks and insights using Gemini API"""
+        """Extract tasks and insights using Gemini API - POST-TRANSCRIPTION ONLY"""
         try:
             if not self.gemini_api_key:
-                logging.warning("Gemini API key not configured")
+                logging.error("Gemini API key not configured - task extraction requires Gemini")
                 return
             
             # Prepare prompt for Gemini
@@ -458,13 +457,30 @@ def start_websocket_server():
         import websockets
         
         async def server():
-            async with websockets.serve(handle_websocket_connection, "localhost", 5001):
-                logging.info("WebSocket server started on ws://localhost:5001/audio")
-                await asyncio.Future()  # Run forever
+            # Try different ports if 5001 is busy
+            ports_to_try = [5001, 5002, 5003, 5004, 5005]
+            
+            for port in ports_to_try:
+                try:
+                    async with websockets.serve(handle_websocket_connection, "localhost", port):
+                        logging.info(f"WebSocket server started on ws://localhost:{port}/audio")
+                        await asyncio.Future()  # Run forever
+                        break
+                except OSError as e:
+                    if "Address already in use" in str(e) or "only one usage of each socket address" in str(e):
+                        logging.warning(f"Port {port} is busy, trying next port...")
+                        continue
+                    else:
+                        raise e
+            else:
+                logging.error("Could not find an available port for WebSocket server")
         
         # Run WebSocket server in a separate thread
         def run_server():
-            asyncio.run(server())
+            try:
+                asyncio.run(server())
+            except Exception as e:
+                logging.error(f"WebSocket server error: {e}")
         
         websocket_thread = threading.Thread(target=run_server, daemon=True)
         websocket_thread.start()
@@ -473,5 +489,6 @@ def start_websocket_server():
     except Exception as e:
         logging.error(f"Error starting WebSocket server: {e}")
 
-# Start WebSocket server when module is imported
-start_websocket_server()
+# Only start WebSocket server if not in test mode
+if not os.getenv('TESTING', '').lower() in ['true', '1', 'yes']:
+    start_websocket_server()
